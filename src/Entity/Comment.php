@@ -39,6 +39,9 @@ class Comment
     #[ORM\JoinColumn(nullable: false)]
     private ?Conference $conference = null;
 
+    #[ORM\Column(length: 255, options: ["default" => "submitted"])]
+    private ?string $state = 'submitted';
+
     #[ORM\PrePersist]
     public function setCreatedAtValue(){
         $this->createdAt = new \DateTimeImmutable();
@@ -129,5 +132,17 @@ class Comment
     public function __toString(): string
     {
         return 'Author: '.$this->author.' '.$this->text.' email: '.$this->email;
+    }
+
+    public function getState(): ?string
+    {
+        return $this->state;
+    }
+
+    public function setState(string $state): self
+    {
+        $this->state = $state;
+
+        return $this;
     }
 }
