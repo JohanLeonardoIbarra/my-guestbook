@@ -3,15 +3,18 @@
 namespace App\MessageHandler;
 
 use App\Message\Comment;
+use App\Notification\CommentReviewNotification;
 use App\Repository\CommentRepository;
 use App\SpamChecker;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\Messenger\Handler\MessageHandlerInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Messenger\MessageBusInterface;
+use Symfony\Component\Notifier\Bridge\Discord\DiscordTransport;
 use Symfony\Component\Workflow\WorkflowInterface;
 use Symfony\Bridge\Twig\Mime\NotificationEmail;
 use Symfony\Component\Mailer\MailerInterface;
+use Symfony\Component\Notifier\NotifierInterface;
 
 final class CommentHandler implements MessageHandlerInterface
 {
@@ -23,8 +26,9 @@ final class CommentHandler implements MessageHandlerInterface
     private $logger;
     private $mailer;
     private $adminEmail;
+    private $notifier;
 
-    public function __construct(EntityManagerInterface $entityManager, SpamChecker $spamChecker, CommentRepository $commentRepository, LoggerInterface $logger, MessageBusInterface $bus, WorkflowInterface $commentStateMachine, MailerInterface $mailer, string $adminEmail)
+    public function __construct(EntityManagerInterface $entityManager, NotifierInterface $notifier, SpamChecker $spamChecker, CommentRepository $commentRepository, LoggerInterface $logger, MessageBusInterface $bus, WorkflowInterface $commentStateMachine, MailerInterface $mailer, string $adminEmail)
     {
         $this->spamChecker = $spamChecker;
         $this->entityManager = $entityManager;
@@ -34,6 +38,7 @@ final class CommentHandler implements MessageHandlerInterface
         $this->workflow = $commentStateMachine;
         $this->mailer = $mailer;
         $this->adminEmail = $adminEmail;
+        $this->notifier = $notifier;
     }
 
     public function __invoke(Comment $message)
@@ -43,6 +48,11 @@ final class CommentHandler implements MessageHandlerInterface
             return;
         }
 
+        $discord = new DiscordTransport("0Umx3xka6vPSHxW_K3whRybPT1BeQGMh9TKxf_CYXQQHt6FBMC6a5T5xYs9Cls-ALozy", "1024782139998351380");
+        $notification = new CommentReviewNotification($comment);
+        $this->notifier->send($notification, ...$this->notifier->getAdminRecipients());
+
+        dd("Hola");
         if ($this->workflow->can($comment, 'accept')) {
             $score = $this->spamChecker->getSpamScore($comment, $message->getContext());
             $transition = 'accept';
@@ -57,12 +67,9 @@ final class CommentHandler implements MessageHandlerInterface
 
             $this->bus->dispatch($message);
         } elseif ($this->workflow->can($comment, 'publish') || $this->workflow->can($comment, 'publish_ham')) {
-            $this->mailer->send((new NotificationEmail()))
-                ->subject('New comment posted')
-                ->htmlTemplate('emails/comment_notification.html.twig')
-                ->from($this->adminEmail)
-                ->to($this->adminEmail)
-                ->context(['comment' => $comment]);
+            //$this->notifier->send(new CommentReviewNotification($comment), ...$this->notifier->getAdminRecipients());
+            $notification = new CommentReviewNotification($comment);
+            $this->notifier->send($notification, ...$this->notifier->getAdminRecipients());
         } elseif ($this->logger) {
             $this->logger->debug('Dropping comment message', ['comment' => $comment->getId(), 'state' => $comment->getState()]);
         }
